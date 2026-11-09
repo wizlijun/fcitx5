@@ -12,9 +12,14 @@
 #include <fcitx-utils/metastring.h>
 #include <fcitx/addoninstance.h>
 
+namespace fcitx {
+class InputContext;
+}
+
 FCITX_ADDON_DECLARE_FUNCTION(
     ClassicUI, labelIcon,
     std::vector<unsigned char>(const std::string &label, unsigned int size));
+FCITX_ADDON_DECLARE_FUNCTION(ClassicUI, hideInputPanel, bool(fcitx::InputContext *));
 FCITX_ADDON_DECLARE_FUNCTION(ClassicUI, preferTextIcon, bool());
 FCITX_ADDON_DECLARE_FUNCTION(ClassicUI, showLayoutNameInIcon, bool());
 

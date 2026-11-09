@@ -1,0 +1,12 @@
+[Addon]
+Name=Sumi Candidates
+Comment=Application-owned candidate panel for an explicitly registered Sumi editor
+Type=@FCITX_ADDON_TYPE@
+Library=libsumicandidates
+Category=Module
+Version=@PROJECT_VERSION@
+OnDemand=False
+
+[Addon/Dependencies]
+0=core:5.1.23
+1=dbus

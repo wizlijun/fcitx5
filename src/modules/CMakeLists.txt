@@ -2,6 +2,7 @@ add_subdirectory(xcb)
 
 if (ENABLE_DBUS)
     add_subdirectory(dbus)
+    add_subdirectory(sumicandidates)
 endif()
 
 add_subdirectory(notifications)

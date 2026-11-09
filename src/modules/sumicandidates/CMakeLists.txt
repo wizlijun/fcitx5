@@ -1,0 +1,15 @@
+# Also supports an isolated addon build against the installed Fcitx libraries.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    cmake_minimum_required(VERSION 3.16)
+    project(fcitx5-sumi-candidates VERSION 5.1.23 LANGUAGES CXX)
+    find_package(Fcitx5Core 5.1.23 REQUIRED)
+    find_package(Fcitx5Module REQUIRED COMPONENTS DBus)
+    set(CMAKE_CXX_STANDARD 20)
+    set(FCITX_ADDON_TYPE SharedLibrary)
+endif()
+add_fcitx5_addon(sumicandidates sumicandidates.cpp)
+target_link_libraries(sumicandidates Fcitx5::Core Fcitx5::Module::DBus)
+configure_file(sumicandidates.conf.in sumicandidates.conf @ONLY)
+install(TARGETS sumicandidates DESTINATION "${FCITX_INSTALL_ADDONDIR}")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sumicandidates.conf"
+        DESTINATION "${FCITX_INSTALL_PKGDATADIR}/addon")

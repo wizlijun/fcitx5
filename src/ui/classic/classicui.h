@@ -240,12 +240,14 @@ public:
 
     std::vector<unsigned char> labelIcon(const std::string &label,
                                          unsigned int size);
+    bool hideInputPanel(InputContext *inputContext);
     bool preferTextIcon() const;
     bool showLayoutNameInIcon() const;
 
 private:
     FCITX_ADDON_DEPENDENCY_LOADER(notificationitem, instance_->addonManager());
     FCITX_ADDON_EXPORT_FUNCTION(ClassicUI, labelIcon);
+    FCITX_ADDON_EXPORT_FUNCTION(ClassicUI, hideInputPanel);
     FCITX_ADDON_EXPORT_FUNCTION(ClassicUI, preferTextIcon);
     FCITX_ADDON_EXPORT_FUNCTION(ClassicUI, showLayoutNameInIcon);
 

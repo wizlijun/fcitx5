@@ -432,6 +432,27 @@ void ClassicUI::resume() {
         }));
 }
 
+bool ClassicUI::hideInputPanel(InputContext *inputContext) {
+    if (!inputContext || !inputContext->hasFocus()) {
+        return false;
+    }
+    auto *ui = uiForInputContext(inputContext);
+    if (inputContext->display().starts_with("wayland:") &&
+        !inputContext->frontendName().starts_with("wayland")) {
+        ui = nullptr;
+#ifdef ENABLE_X11
+        if (auto *xcbAddon = xcb()) {
+            auto display = xcbAddon->call<IXCBModule::mainDisplay>();
+            ui = uiForDisplay("x11:" + display);
+        }
+#endif
+    }
+    if (ui) {
+        ui->update(UserInterfaceComponent::InputPanel, nullptr);
+    }
+    return true;
+}
+
 void ClassicUI::update(UserInterfaceComponent component,
                        InputContext *inputContext) {
     UIInterface *ui = nullptr;
