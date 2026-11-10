@@ -83,7 +83,12 @@ for char in "nihao":
 f = frame()
 assert f[0] == "editor" and any("你好" in row[2] for row in f[2]), f
 assert any(items for items, cursor in preedits), preedits
-print("PASS: real pinyin candidates, inline preedit chain preserved")
+items, cursor = next((items, cursor) for items, cursor in reversed(preedits) if items)
+assert "".join(text for text, flags in items) == "ni hao", items
+assert not any(flags & (1 << 4) for text, flags in items), items
+assert any(flags & (1 << 3) for text, flags in items), items
+assert 0 <= cursor <= len("ni hao"), cursor
+print("PASS: real pinyin candidates, underline-only inline preedit preserved")
 # Unrelated sender and stale frame cannot select a candidate.
 intruder = connection()
 call(intruder, PATH, IFACE, "Select", "(sti)", ("editor", f[1], f[2][0][0]))
@@ -108,13 +113,18 @@ print("PASS: callback reattached after panel reset and candidate paging")
 call(client, ic, IC, "FocusOut")
 wait(lambda: frames and not frames[-1][2] and "editor" in revocations)
 frames.clear()
+preedits.clear()
 ic2 = create("sumi-test")
 call(client, ic2, IC, "FocusIn")
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
 key(ic2, "n")
 time.sleep(.05)
 while GLib.MainContext.default().iteration(False):
     pass
 assert not frames
+wait(lambda: any(items for items, cursor in preedits))
+items, cursor = next((items, cursor) for items, cursor in reversed(preedits) if items)
+assert any(flags & (1 << 4) for text, flags in items), items
 print("PASS: focus loss revokes exact IC and does not capture sibling editor")
 # Destroy and owner disconnect both free the lease.
 assert call(owner, PATH, IFACE, "SetActive", "(sasb)", ("editor2", ["sumi-test"], True)) == (True,)

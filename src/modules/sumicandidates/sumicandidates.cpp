@@ -10,6 +10,7 @@
 #include <fcitx-utils/dbus/objectvtable.h>
 #include <fcitx-utils/dbus/servicewatcher.h>
 #include <fcitx-utils/trackableobject.h>
+#include <fcitx-utils/signals.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
@@ -39,6 +40,25 @@ public:
           bus_(instance->addonManager().addon("dbus")->call<IDBusModule::bus>()),
           watcher_(*bus_) {
         bus_->addObjectVTable(Path, Interface, *this);
+        outputFilter_ = instance_->connect<Instance::OutputFilter>(
+            [this](InputContext *ic, Text &text) {
+                if (!ic || owner_.empty() || bound_.get() != ic || !ic->hasFocus()) {
+                    return;
+                }
+                // Only presentation changes: preserve segments, cursor and all
+                // semantic flags (especially DontCommit) for the native IM path.
+                Text quiet;
+                for (int i = 0, end = text.size(); i < end; ++i) {
+                    auto flags = text.formatAt(i);
+                    if (flags.test(TextFormatFlag::HighLight)) {
+                        flags = flags.unset(TextFormatFlag::HighLight) |
+                                TextFormatFlag::Underline;
+                    }
+                    quiet.append(text.stringAt(i), flags);
+                }
+                quiet.setCursor(text.cursor());
+                text = std::move(quiet);
+            });
         for (auto type : {EventType::InputContextFocusIn,
                           EventType::InputContextUpdateUI,
                           EventType::InputContextFlushUI}) {
@@ -262,6 +282,7 @@ private:
     dbus::ServiceWatcher watcher_;
     std::unique_ptr<dbus::ServiceWatcherEntry> ownerWatch_;
     std::vector<std::unique_ptr<HandlerTableEntry<EventHandler>>> events_;
+    ScopedConnection outputFilter_;
     TrackableObjectReference<InputContext> bound_;
     std::string owner_, token_;
     std::vector<std::string> programs_;

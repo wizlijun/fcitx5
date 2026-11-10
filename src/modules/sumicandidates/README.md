@@ -32,6 +32,11 @@ Service `org.fcitx.Fcitx5`, object `/org/fcitx/Fcitx5/SumiCandidates`, interface
 The client must activate only while its **editor widget** is focused and
 explicitly deactivate on focus loss, disconnect and disposal. An application-wide
 focus flag is insufficient: other note.md input fields share the same program.
+While the exact Sumi context owns the lease, the display output filter changes
+`HighLight` to `Underline`. Inline preedit keeps its text, cursor and semantic
+flags, without the toolkit's selected-text background. Other input contexts and
+ordinary document selections are unaffected; commits use the original IM path.
+
 Registration should follow the GTK editor's FocusIn processing, so the intended
 input context is current. The protocol does not identify a GTK widget itself.
 
