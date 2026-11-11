@@ -124,8 +124,9 @@ while GLib.MainContext.default().iteration(False):
 assert not frames
 wait(lambda: any(items for items, cursor in preedits))
 items, cursor = next((items, cursor) for items, cursor in reversed(preedits) if items)
-assert any(flags & (1 << 4) for text, flags in items), items
-print("PASS: focus loss revokes exact IC and does not capture sibling editor")
+assert not any(flags & (1 << 4) for text, flags in items), items
+assert any(flags & (1 << 3) for text, flags in items), items
+print("PASS: focus loss revokes exact IC; unleased sibling keeps underline-only preedit")
 # Destroy and owner disconnect both free the lease.
 assert call(owner, PATH, IFACE, "SetActive", "(sasb)", ("editor2", ["sumi-test"], True)) == (True,)
 call(client, ic2, IC, "DestroyIC")
@@ -141,7 +142,13 @@ ic3 = create("sumi-client-side")
 call(client, ic3, IC, "SetCapability", "(t)", ((1 << 1) | (1 << 4) | (1 << 39),))
 call(client, ic3, IC, "FocusIn")
 call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
+preedits.clear()
 key(ic3, "n")
+wait(lambda: any(items for items, cursor in preedits))
+items, cursor = next((items, cursor) for items, cursor in reversed(preedits) if items)
+assert not any(flags & (1 << 4) for text, flags in items), items
+assert any(flags & (1 << 3) for text, flags in items), items
+print("PASS: unrelated application has underline-only preedit without a lease")
 wait(lambda: client_panels and client_panels[-1][4])
 assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
             ("client-side", ["sumi-client-side"], True)) == (False,)

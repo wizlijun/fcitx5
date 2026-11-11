@@ -2,8 +2,9 @@
 
 This optional addon transfers only candidate presentation to one explicitly
 registered editor. GTK continues to own key handling, inline preedit, surrounding
-text and committed text. No global theme, input method, dictionary or capability
-flag is changed.
+text and committed text. No input method, dictionary or capability flag is changed. Independently of
+the candidate lease, the addon applies underline-only composition styling to
+all focused input contexts; it does not set the candidate-window theme.
 
 ## Protocol
 
@@ -32,10 +33,12 @@ Service `org.fcitx.Fcitx5`, object `/org/fcitx/Fcitx5/SumiCandidates`, interface
 The client must activate only while its **editor widget** is focused and
 explicitly deactivate on focus loss, disconnect and disposal. An application-wide
 focus flag is insufficient: other note.md input fields share the same program.
-While the exact Sumi context owns the lease, the display output filter changes
-`HighLight` to `Underline`. Inline preedit keeps its text, cursor and semantic
-flags, without the toolkit's selected-text background. Other input contexts and
-ordinary document selections are unaffected; commits use the original IM path.
+For every focused input context, the display output filter changes `HighLight`
+to `Underline`, including applications without a Sumi lease. Inline preedit keeps
+its text, cursor and semantic flags, without the toolkit's selected-text background.
+This filter only handles input-method presentation; ordinary application document
+selections are unaffected, and commits use the original IM path. A frontend or
+application that ignores formatting flags may still render its own preedit style.
 
 Registration should follow the GTK editor's FocusIn processing, so the intended
 input context is current. The protocol does not identify a GTK widget itself.
@@ -77,7 +80,8 @@ src/modules/sumicandidates/tests/run-isolated.sh
 ```
 
 It checks actual pinyin candidates and commits, ownership and serial checks,
-callback reattachment after reset, paging, focus isolation between two contexts
+callback reattachment after reset, paging, underline-only preedit in leased,
+unleased sibling and unrelated application contexts, focus isolation between two contexts
 of the same application, context destruction, owner disconnect, and preservation/retry of an existing GTK
 client-side popup. It does not
 provide visual acceptance evidence for the Classic UI hide function or the Sumi

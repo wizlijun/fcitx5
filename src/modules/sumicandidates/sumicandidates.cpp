@@ -41,12 +41,15 @@ public:
           watcher_(*bus_) {
         bus_->addObjectVTable(Path, Interface, *this);
         outputFilter_ = instance_->connect<Instance::OutputFilter>(
-            [this](InputContext *ic, Text &text) {
-                if (!ic || owner_.empty() || bound_.get() != ic || !ic->hasFocus()) {
+            [](InputContext *ic, Text &text) {
+                if (!ic || !ic->hasFocus()) {
                     return;
                 }
-                // Only presentation changes: preserve segments, cursor and all
-                // semantic flags (especially DontCommit) for the native IM path.
+                // Apply quiet composition styling to every focused application,
+                // independently of the Sumi candidate lease. OutputFilter only
+                // handles IM presentation, not application document selections
+                // or committed text. Preserve segments, cursor and all semantic
+                // flags (especially DontCommit) for the native IM path.
                 Text quiet;
                 for (int i = 0, end = text.size(); i < end; ++i) {
                     auto flags = text.formatAt(i);
