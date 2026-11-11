@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 #include <fcitx-utils/capabilityflags.h>
 #include <fcitx-utils/dbus/objectvtable.h>
@@ -62,6 +63,9 @@ public:
                 quiet.setCursor(text.cursor());
                 text = std::move(quiet);
             });
+        events_.emplace_back(instance_->watchEvent(
+            EventType::InputContextKeyEvent, EventWatcherPhase::PreInputMethod,
+            [this](Event &event) { publishKey(static_cast<KeyEvent &>(event)); }));
         for (auto type : {EventType::InputContextFocusIn,
                           EventType::InputContextUpdateUI,
                           EventType::InputContextFlushUI}) {
@@ -97,6 +101,17 @@ public:
 
     bool setActive(const std::string &token,
                    const std::vector<std::string> &programs, bool active) {
+        return setActiveImpl(token, programs, active, false);
+    }
+
+    bool setActiveWithTyping(const std::string &token,
+                             const std::vector<std::string> &programs, bool active) {
+        return setActiveImpl(token, programs, active, true);
+    }
+
+    bool setActiveImpl(const std::string &token,
+                       const std::vector<std::string> &programs, bool active,
+                       bool typing) {
         const auto sender = currentMessage()->sender();
         if (!active) {
             if (sender != owner_ || token != token_) {
@@ -114,9 +129,14 @@ public:
         }
         if (!owner_.empty()) {
             // A renewal cannot transfer ownership to another input context.
-            return owner_ == sender && token_ == token && programs_ == programs;
+            if (owner_ != sender || token_ != token || programs_ != programs) {
+                return false;
+            }
+            setTyping(typing);
+            return true;
         }
         owner_ = sender;
+        setTyping(typing);
         token_ = token;
         programs_ = programs;
         ownerWatch_ = watcher_.watchService(owner_,
@@ -165,6 +185,61 @@ public:
     }
 
 private:
+    void setTyping(bool enabled) {
+        if (typingEnabled_ != enabled) {
+            pressed_.clear();
+            typingEnabled_ = enabled;
+        }
+    }
+
+    void publishKey(const KeyEvent &event) {
+        auto *ic = event.inputContext();
+        if (!typingEnabled_ || owner_.empty() || bound_.get() != ic ||
+            !matches(ic) || !ownsCallback(ic)) {
+            return;
+        }
+        const auto key = event.origKey();
+        // Code and time retain the GTK/Wayland event identity. Symbols are used
+        // locally for sound roles only and never leave the input-method process.
+        const uint64_t identity = key.code() ? key.code()
+            : (uint64_t{1} << 32) | static_cast<uint32_t>(key.sym());
+        uint32_t role;
+        if (event.isRelease()) {
+            const auto found = pressed_.find(identity);
+            if (found == pressed_.end()) {
+                return;
+            }
+            role = found->second == 1 ? 6 : 5;
+            pressed_.erase(found);
+        } else {
+            if (key.states().testAny(KeyStates{KeyState::Ctrl, KeyState::Super,
+                                              KeyState::Super2, KeyState::Meta})) {
+                return;
+            }
+            switch (key.sym()) {
+            case FcitxKey_space: role = 1; break;
+            case FcitxKey_Return:
+            case FcitxKey_KP_Enter: role = 2; break;
+            case FcitxKey_BackSpace:
+            case FcitxKey_Delete: role = 3; break;
+            case FcitxKey_Shift_L:
+            case FcitxKey_Shift_R:
+            case FcitxKey_Control_L:
+            case FcitxKey_Control_R:
+            case FcitxKey_Alt_L:
+            case FcitxKey_Alt_R:
+            case FcitxKey_Super_L:
+            case FcitxKey_Super_R:
+            case FcitxKey_Meta_L:
+            case FcitxKey_Meta_R: role = 4; break;
+            default: role = 0; break;
+            }
+            pressed_[identity] = role;
+        }
+        typingKeyTo(owner_, token_, ++typingSerial_,
+                    static_cast<uint32_t>(event.time()), key.code(), role);
+    }
+
     static bool typeIsDestroyed(const Event &event) {
         return event.type() == EventType::InputContextDestroyed;
     }
@@ -264,6 +339,8 @@ private:
             candidatesTo(owner_, token_, ++serial_, Candidates{}, -1, false, false);
             revokedTo(owner_, token_);
         }
+        setTyping(false);
+        pressed_.clear();
         bound_.unwatch();
         owner_.clear();
         token_.clear();
@@ -276,10 +353,12 @@ private:
     }
 
     FCITX_OBJECT_VTABLE_METHOD(setActive, "SetActive", "sasb", "b");
+    FCITX_OBJECT_VTABLE_METHOD(setActiveWithTyping, "SetActiveWithTyping", "sasb", "b");
     FCITX_OBJECT_VTABLE_METHOD(select, "Select", "sti", "");
     FCITX_OBJECT_VTABLE_METHOD(page, "Page", "stb", "");
     FCITX_OBJECT_VTABLE_SIGNAL(candidates, "Candidates", "sta(iss)ibb");
     FCITX_OBJECT_VTABLE_SIGNAL(revoked, "Revoked", "s");
+    FCITX_OBJECT_VTABLE_SIGNAL(typingKey, "TypingKey", "stuuu");
     Instance *instance_;
     dbus::Bus *bus_;
     dbus::ServiceWatcher watcher_;
@@ -291,6 +370,9 @@ private:
     std::vector<std::string> programs_;
     std::vector<int32_t> indices_;
     uint64_t serial_ = 0;
+    uint64_t typingSerial_ = 0;
+    bool typingEnabled_ = false;
+    std::unordered_map<uint64_t, uint32_t> pressed_;
 };
 
 class SumiCandidatesFactory : public AddonFactory {

@@ -1,8 +1,8 @@
 # Sumi candidate bridge
 
-This optional addon transfers only candidate presentation to one explicitly
-registered editor. GTK continues to own key handling, inline preedit, surrounding
-text and committed text. No input method, dictionary or capability flag is changed. Independently of
+This optional addon transfers candidate presentation and, when explicitly
+requested, typing-sound feedback to one registered editor. GTK and Fcitx continue
+to own key handling, inline preedit, surrounding text and committed text. No input method, dictionary or capability flag is changed. Independently of
 the candidate lease, the addon applies underline-only composition styling to
 all focused input contexts; it does not set the candidate-window theme.
 
@@ -16,6 +16,29 @@ Service `org.fcitx.Fcitx5`, object `/org/fcitx/Fcitx5/SumiCandidates`, interface
   rejected. True means the lease was accepted, possibly waiting for a matching
   focused input context. Once bound, the lease never transfers to another input
   context. Repeat calls with the same token/owner/programs renew idempotently.
+- `SetActiveWithTyping(s token, as programs, b active) -> b`: the same lease
+  and ownership rules, with opt-in typing feedback. An older addon does not have
+  this method; clients can retain their legacy path on `UnknownMethod`. Renewing
+  with the legacy `SetActive` method explicitly disables typing feedback and
+  clears held keys. A failed or foreign request cannot enable, disable or transfer
+  another connection's feedback.
+- Unicast `TypingKey(s token, t serial, u time, u code, u role)`: actual input
+  events observed at `PreInputMethod`, before the engine can consume punctuation,
+  confirmation, deletion or composition keys. Roles are `0=Key`, `1=Space`,
+  `2=Enter`, `3=Delete`, `4=Modifier`, `5=KeyUp`, `6=SpaceUp`. Its serial is an
+  independent increasing counter; it does not invalidate candidate selection.
+  The signal is sent only to the registered owner while the exact bound context
+  has focus and still owns its candidate callback. It never filters or accepts
+  the input event. Ctrl/Super/Meta combinations are ignored; releases require a
+  matching press in the current typing lease. Revocation or mode changes clear
+  held keys. No text, keysym, candidate selection or document content is included.
+  The original event's hardware code and millisecond timestamp are retained
+  without an evdev offset conversion. Synthetic clients may use code zero.
+  A client hearing both GTK and bridge events must pair **opposite sources** by
+  `(time, code, release)` and consume each pair once. It must not deduplicate all
+  matching identities: Fcitx Wayland auto-repeat can reuse the initial timestamp,
+  and every same-source repeat remains a distinct input. Keep matching state
+  bounded and clear it on focus loss, lease loss and sound-monitor reset.
 - Unicast `Candidates(s token, t serial, a(iss) rows, i cursor, b hasPrev,
   b hasNext)`: each row contains the real candidate-list index, filtered label,
   and filtered text with comment. Placeholders are omitted; indices are not
@@ -83,6 +106,9 @@ It checks actual pinyin candidates and commits, ownership and serial checks,
 callback reattachment after reset, paging, underline-only preedit in leased,
 unleased sibling and unrelated application contexts, focus isolation between two contexts
 of the same application, context destruction, owner disconnect, and preservation/retry of an existing GTK
-client-side popup. It does not
+client-side popup. Typing regressions additionally cover real Chinese punctuation,
+pinyin confirmed by Space and Return, press/release roles, ignored modifiers,
+unchanged auto-repeat timestamps, zero-code synthetic clients, legacy API
+compatibility, unicast delivery, owner rejection and lease cleanup. It does not
 provide visual acceptance evidence for the Classic UI hide function or the Sumi
 renderer; those require a separate isolated display/session UI test.

@@ -161,5 +161,128 @@ assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
 assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
             ("client-side-next", [], False)) == (True,)
 print("PASS: existing GTK client-side popup preserved, retry after reset accepted")
+# Typing feedback observes actual keys before the engine can consume them.
+# It is an opt-in part of the exact candidate lease, never a global key monitor.
+typing_owner = connection()
+typing = []
+foreign_typing = []
+typing_owner.signal_subscribe(SERVICE, IFACE, "TypingKey", PATH, None,
+    Gio.DBusSignalFlags.NONE, lambda *args: typing.append(args[5].unpack()))
+intruder.signal_subscribe(SERVICE, IFACE, "TypingKey", PATH, None,
+    Gio.DBusSignalFlags.NONE, lambda *args: foreign_typing.append(args[5].unpack()))
+call(client, ic3, IC, "FocusOut")
+it = create("sumi-typing")
+call(client, it, IC, "FocusIn")
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "SetCurrentIM", "(s)", ("pinyin",))
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
+clock = 1000
+
+def drain():
+    time.sleep(.02)
+    while GLib.MainContext.default().iteration(False):
+        pass
+
+def send(sym, code, release=False, mods=0, stamp=None):
+    global clock
+    clock += 1
+    result = call(client, it, IC, "ProcessKeyEvent", "(uuubu)",
+                  (sym, code, mods, release, clock if stamp is None else stamp))
+    drain()
+    return result
+
+def tap(sym, code, mods=0):
+    sym = ord(sym) if isinstance(sym, str) else sym
+    send(sym, code, mods=mods)
+    send(sym, code, release=True, mods=mods)
+
+def expect_roles(action, roles):
+    start = len(typing)
+    action()
+    drain()
+    actual = [row[4] for row in typing[start:]]
+    assert actual == roles, (actual, roles, typing[start:])
+
+assert call(typing_owner, PATH, IFACE, "SetActive", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (True,)
+expect_roles(lambda: tap("n", 57), [])
+call(client, it, IC, "Reset")
+assert call(intruder, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (False,)
+expect_roles(lambda: tap("n", 57), [])
+call(client, it, IC, "Reset")
+assert call(typing_owner, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (False,)
+assert call(intruder, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("typing", [], False)) == (False,)
+for char, code in zip("nihao", [57, 31, 43, 38, 32]):
+    expect_roles(lambda c=char, k=code: tap(c, k), [0, 5])
+expect_roles(lambda: tap(" ", 65), [1, 6])
+assert commits[-1] == "你好", commits[-3:]
+expect_roles(lambda: tap(".", 60), [0, 5])
+assert commits[-1] == "。", commits[-3:]
+expect_roles(lambda: tap(",", 59), [0, 5])
+assert commits[-1] == "，", commits[-3:]
+for char, code in zip("nihao", [57, 31, 43, 38, 32]):
+    expect_roles(lambda c=char, k=code: tap(c, k), [0, 5])
+expect_roles(lambda: tap(0xff0d, 36), [2, 5])
+assert commits[-1].replace(" ", "") == "nihao", commits[-3:]
+assert all(len(row) == 5 and row[0] == "typing" and
+           all(isinstance(value, int) for value in row[1:]) for row in typing)
+assert all(a[1] < b[1] for a, b in zip(typing, typing[1:]))
+assert not foreign_typing, foreign_typing
+print("PASS: opt-in unicast typing covers pinyin, space/return confirmation and Chinese punctuation")
+
+# Unconsumed navigation and deletion are still observed, without changing their
+# engine result; repeated timestamps remain distinct physical/repeat events.
+expect_roles(lambda: tap(0xff08, 22), [3, 5])
+expect_roles(lambda: tap(0xffff, 119), [3, 5])
+expect_roles(lambda: tap(0xff51, 113), [0, 5])
+expect_roles(lambda: tap("a", 38, mods=4), [])
+expect_roles(lambda: tap(0xffe1, 50), [4, 5])
+expect_roles(lambda: (send(ord("n"), 57, stamp=2000),
+                      send(ord("n"), 57, stamp=2000),
+                      send(ord("n"), 57, release=True, stamp=2001)), [0, 0, 5])
+assert [row[2] for row in typing[-3:]] == [2000, 2000, 2001]
+assert [row[3] for row in typing[-3:]] == [57, 57, 57]
+call(client, it, IC, "Reset")
+# Synthetic D-Bus clients may supply no hardware code. The internal press map
+# pairs these by symbol, but the wire keeps code zero and never sends a symbol.
+expect_roles(lambda: tap("n", 0), [0, 5])
+assert [row[3] for row in typing[-2:]] == [0, 0]
+call(client, it, IC, "Reset")
+expect_roles(lambda: send(ord("n"), 57), [0])
+assert call(typing_owner, PATH, IFACE, "SetActive", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (True,)
+expect_roles(lambda: tap("i", 31), [])
+assert call(typing_owner, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("typing", ["sumi-typing"], True)) == (True,)
+expect_roles(lambda: send(ord("n"), 57, release=True), [])
+call(client, it, IC, "Reset")
+print("PASS: typing preserves repeat identity, roles and modifier filtering; legacy renewal clears pressed keys")
+
+expect_roles(lambda: send(ord("n"), 57), [0])
+call(client, it, IC, "FocusOut")
+other = create("sumi-typing")
+call(client, other, IC, "FocusIn")
+it = other
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
+expect_roles(lambda: tap("n", 57), [])
+call(client, it, IC, "Reset")
+assert call(typing_owner, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("typing-next", ["sumi-typing"], True)) == (True,)
+expect_roles(lambda: send(ord("n"), 57, release=True), [])
+expect_roles(lambda: tap("n", 57), [0, 5])
+typing_owner.close_sync(None)
+drain()
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("typing-after-disconnect", ["sumi-typing"], True)) == (True,)
+expect_roles(lambda: tap("i", 31), [])
+assert not foreign_typing, foreign_typing
+call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+     ("typing-after-disconnect", [], False))
+print("PASS: typing stops on focus loss and owner disconnect; a new lease cannot release old keys")
+
 client.close_sync(None)
 intruder.close_sync(None)
