@@ -16,6 +16,11 @@ Service `org.fcitx.Fcitx5`, object `/org/fcitx/Fcitx5/SumiCandidates`, interface
   rejected. True means the lease was accepted, possibly waiting for a matching
   focused input context. Once bound, the lease never transfers to another input
   context. Repeat calls with the same token/owner/programs renew idempotently.
+  A different request can replace an unbound pending lease only when the current
+  focused input context matches its programs. The old owner receives the final
+  empty frame and `Revoked`; the new request must still pass normal bind checks.
+  A bound lease cannot be replaced this way, even by another token on the same
+  connection. A stale token or former owner cannot release the successor lease.
 - `SetActiveWithTyping(s token, as programs, b active) -> b`: the same lease
   and ownership rules, with opt-in typing feedback. An older addon does not have
   this method; clients can retain their legacy path on `UnknownMethod`. Renewing
@@ -106,7 +111,10 @@ It checks actual pinyin candidates and commits, ownership and serial checks,
 callback reattachment after reset, paging, underline-only preedit in leased,
 unleased sibling and unrelated application contexts, focus isolation between two contexts
 of the same application, context destruction, owner disconnect, and preservation/retry of an existing GTK
-client-side popup. Typing regressions additionally cover real Chinese punctuation,
+client-side popup. Pending-lease regressions cover focused cross-application and
+same-owner handoff, stale-owner/token rejection, bound-lease protection, former
+owner disconnect and preservation of an existing popup when the new bind fails.
+Typing regressions additionally cover real Chinese punctuation,
 pinyin confirmed by Space and Return, press/release roles, ignored modifiers,
 unchanged auto-repeat timestamps, zero-code synthetic clients, legacy API
 compatibility, unicast delivery, owner rejection and lease cleanup. It does not

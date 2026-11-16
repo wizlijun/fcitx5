@@ -127,13 +127,21 @@ public:
             })) {
             return false;
         }
+        auto *ic = instance_->lastFocusedInputContext();
         if (!owner_.empty()) {
             // A renewal cannot transfer ownership to another input context.
-            if (owner_ != sender || token_ != token || programs_ != programs) {
+            if (owner_ == sender && token_ == token && programs_ == programs) {
+                setTyping(typing);
+                return true;
+            }
+            // An unbound request must not block another focused editor forever.
+            // Only a matching focused request may replace it; bound leases and
+            // the callback checks in bind() retain their existing protections.
+            if (!bound_.isNull() || !ic || !ic->hasFocus() ||
+                std::find(programs.begin(), programs.end(), ic->program()) == programs.end()) {
                 return false;
             }
-            setTyping(typing);
-            return true;
+            revoke();
         }
         owner_ = sender;
         setTyping(typing);
@@ -145,7 +153,6 @@ public:
                     revoke();
                 }
             });
-        auto *ic = instance_->lastFocusedInputContext();
         if (matches(ic) && !bind(ic)) {
             revoke();
             return false;

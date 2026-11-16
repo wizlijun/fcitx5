@@ -284,5 +284,102 @@ call(intruder, PATH, IFACE, "SetActive", "(sasb)",
      ("typing-after-disconnect", [], False))
 print("PASS: typing stops on focus loss and owner disconnect; a new lease cannot release old keys")
 
+# A pending application must not starve another application's focused editor.
+# Only a matching focused request can replace pending ownership; bound leases
+# retain the original sender/token protections.
+call(client, it, IC, "FocusOut")
+pending_owner = connection()
+pending_frames = []
+pending_revoked = []
+new_frames = []
+pending_owner.signal_subscribe(SERVICE, IFACE, "Candidates", PATH, None,
+    Gio.DBusSignalFlags.NONE, lambda *args: pending_frames.append(args[5].unpack()))
+pending_owner.signal_subscribe(SERVICE, IFACE, "Revoked", PATH, None,
+    Gio.DBusSignalFlags.NONE, lambda *args: pending_revoked.append(args[5].unpack()[0]))
+intruder.signal_subscribe(SERVICE, IFACE, "Candidates", PATH, None,
+    Gio.DBusSignalFlags.NONE, lambda *args: new_frames.append(args[5].unpack()))
+assert call(pending_owner, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("pending-sumi", ["sumi-pending"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("focused-rapp", ["rapp-focused"], True)) == (False,)
+rapp = create("rapp-focused")
+call(client, rapp, IC, "FocusIn")
+for programs in (["other-program"], ["*"], []):
+    assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+                ("focused-rapp", programs, True)) == (False,)
+assert call(pending_owner, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+            ("pending-sumi", ["sumi-pending"], True)) == (True,)
+assert not pending_revoked
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("focused-rapp", ["rapp-focused"], True)) == (True,)
+wait(lambda: "pending-sumi" in pending_revoked)
+assert pending_frames[-1][0] == "pending-sumi" and not pending_frames[-1][2]
+print("PASS: only a matching focused application can replace a pending lease, with final empty frame and revocation")
+
+# Neither the former sender nor a stale token can revoke or steal the new lease.
+for sender, token in ((pending_owner, "pending-sumi"),
+                      (pending_owner, "focused-rapp"),
+                      (intruder, "pending-sumi")):
+    assert call(sender, PATH, IFACE, "SetActive", "(sasb)",
+                (token, [], False)) == (False,)
+for sender, token in ((pending_owner, "focused-rapp"),
+                      (pending_owner, "steal-bound"),
+                      (intruder, "replace-bound")):
+    assert call(sender, PATH, IFACE, "SetActiveWithTyping", "(sasb)",
+                (token, ["rapp-focused"], True)) == (False,)
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
+key(rapp, "n")
+wait(lambda: new_frames and new_frames[-1][2])
+f = new_frames[-1]
+commit_count = len(commits)
+call(pending_owner, PATH, IFACE, "Select", "(sti)", ("focused-rapp", f[1], f[2][0][0]))
+drain()
+assert len(commits) == commit_count
+call(intruder, PATH, IFACE, "Select", "(sti)", ("focused-rapp", f[1], f[2][0][0]))
+wait(lambda: len(commits) > commit_count)
+pending_owner.close_sync(None)
+drain()
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("focused-rapp", ["rapp-focused"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("focused-rapp", [], False)) == (True,)
+print("PASS: handoff preserves bound ownership, selection and stale-token rejection; former owner disconnect cannot revoke successor")
+
+# A shared D-Bus connection may also replace its own unbound editor request.
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("same-owner-pending", ["not-focused"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("same-owner-focused", ["rapp-focused"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("same-owner-pending", [], False)) == (False,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("same-owner-focused", [], False)) == (True,)
+print("PASS: same-owner pending handoff still requires the successor token")
+
+# Handoff does not bypass bind()'s existing-popup preservation checks.
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("pending-before-popup", ["not-focused"], True)) == (True,)
+call(client, rapp, IC, "FocusOut")
+late = create("rapp-client-side")
+call(client, late, IC, "SetCapability", "(t)", ((1 << 1) | (1 << 4) | (1 << 39),))
+call(client, late, IC, "FocusIn")
+call(client, "/controller", "org.fcitx.Fcitx.Controller1", "Activate")
+client_panels.clear()
+key(late, "n")
+wait(lambda: client_panels and client_panels[-1][4])
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("late-handoff", ["rapp-client-side"], True)) == (False,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("pending-before-popup", [], False)) == (False,)
+commit_count = len(commits)
+key(late, " ")
+wait(lambda: len(commits) > commit_count)
+call(client, late, IC, "Reset")
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("after-popup", ["rapp-client-side"], True)) == (True,)
+assert call(intruder, PATH, IFACE, "SetActive", "(sasb)",
+            ("after-popup", [], False)) == (True,)
+print("PASS: failed handoff preserves existing GTK popup and native commit; retry after composition succeeds")
+
 client.close_sync(None)
 intruder.close_sync(None)
