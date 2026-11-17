@@ -1,0 +1,26 @@
+{
+  "hyprland_commit": "efb50993780079460b0cbed1363e2166a2de1d9f",
+  "plugin_sha256": "dd460650fed6812f2615cc849b3f26229c3ab80b996b4f1004d98362eec4e86a",
+  "isolated_checks": {
+    "windowed_candidates_visible": true,
+    "fullscreen_without_plugin_candidates_hidden": true,
+    "fullscreen_with_plugin_candidates_visible": true,
+    "unload_reproduces_hidden_candidates": true,
+    "reload_restores_candidates": true,
+    "space_commits_nihao": true,
+    "all_fullscreen_captures_state": [
+      2,
+      2
+    ]
+  },
+  "desktop_verified": {
+    "true_fullscreen": [
+      2,
+      2
+    ],
+    "candidates_visible": true
+  },
+  "hyprland_configerrors": "",
+  "installed_source_matches_tested_source": true,
+  "installed_binary_matches_tested_binary": true
+}
